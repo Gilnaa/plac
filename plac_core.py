@@ -3,6 +3,8 @@ import re
 import sys
 import time
 import inspect
+import textwrap
+import functools
 import argparse
 from datetime import datetime, date
 from gettext import gettext as _
@@ -18,10 +20,12 @@ else:
 
 
 def to_date(s):
+    """Returns year-month-day"""
     return date(*time.strptime(s, "%Y-%m-%d")[0:3])
 
 
 def to_datetime(s):
+    """Returns year-month-day hour-minute-second"""
     return datetime(*time.strptime(s, "%Y-%m-%d %H-%M-%S")[0:6])
 
 
@@ -70,6 +74,40 @@ def annotations(**ann):
     return annotate
 
 
+def _annotate(arg, ann, f):
+    try:
+        f.__annotations__[arg] = ann
+    except AttributeError:  # Python 2.7
+        f.__annotations__ = {arg: ann}
+    return f
+
+
+def pos(arg, help=None, type=None, choices=None, metavar=None):
+    """
+    Decorator for annotating positional arguments
+    """
+    return functools.partial(
+        _annotate, arg, (help, 'positional', None, type, choices, metavar))
+
+
+def opt(arg, help=None, type=None, abbrev=None, choices=None, metavar=None):
+    """
+    Decorator for annotating optional arguments
+    """
+    abbrev = abbrev or arg[0]
+    return functools.partial(
+        _annotate, arg, (help, 'option', abbrev, type, choices, metavar))
+
+
+def flg(arg, help=None, type=None, abbrev=None, choices=None, metavar=None):
+    """
+    Decorator for annotating flags
+    """
+    abbrev = abbrev or arg[0]
+    return functools.partial(
+        _annotate, arg, (help, 'flag', abbrev, type, choices, metavar))
+
+
 def is_annotation(obj):
     """
     An object is an annotation object if it has the attributes
@@ -110,13 +148,17 @@ PARSER_CFG = getfullargspec(argparse.ArgumentParser.__init__).args[1:]
 
 
 def pconf(obj):
-    "Extracts the configuration of the underlying ArgumentParser from obj"
-    cfg = dict(description=obj.__doc__,
+    """
+    Extracts the configuration of the underlying ArgumentParser from obj
+    """
+    cfg = dict(description=(textwrap.dedent(obj.__doc__.rstrip())
+                            if obj.__doc__ else None),
                formatter_class=argparse.RawDescriptionHelpFormatter)
     for name in dir(obj):
         if name in PARSER_CFG:  # argument of ArgumentParser
             cfg[name] = getattr(obj, name)
     return cfg
+
 
 _parser_registry = {}
 
@@ -145,7 +187,9 @@ def parser_from(obj, **confparams):
 
 
 def _extract_kwargs(args):
-    "Returns two lists: regular args and name=value args"
+    """
+    Returns two lists: regular args and name=value args
+    """
     arglist = []
     kwargs = {}
     for arg in args:
@@ -159,7 +203,9 @@ def _extract_kwargs(args):
 
 
 def _match_cmd(abbrev, commands, case_sensitive=True):
-    "Extract the command name from an abbreviation or raise a NameError"
+    """
+    Extract the command name from an abbreviation or raise a NameError
+    """
     if not case_sensitive:
         abbrev = abbrev.upper()
         commands = [c.upper() for c in commands]
@@ -187,8 +233,10 @@ class ArgumentParser(argparse.ArgumentParser):
         return arg
 
     def consume(self, args):
-        """Call the underlying function with the args. Works also for
-        command containers, by dispatching to the right subparser."""
+        """
+        Call the underlying function with the args. Works also for
+        command containers, by dispatching to the right subparser.
+        """
         arglist = [self.alias(a) for a in args]
         cmd = None
         if hasattr(self, 'subparsers'):
@@ -197,10 +245,6 @@ class ArgumentParser(argparse.ArgumentParser):
                 return cmd, self.missing(cmd)
             elif subp is not None:  # use the subparser
                 self = subp
-        if hasattr(self, 'argspec') and self.argspec.varkw:
-            arglist, kwargs = _extract_kwargs(arglist)  # modify arglist!
-        else:
-            kwargs = {}
         if hasattr(self, 'argspec') and self.argspec.varargs:
             # ignore unrecognized arguments
             ns, extraopts = self.parse_known_args(arglist)
@@ -208,16 +252,33 @@ class ArgumentParser(argparse.ArgumentParser):
             ns, extraopts = self.parse_args(arglist), []  # may raise an exit
         if not hasattr(self, 'argspec'):
             raise SystemExit
-        args = [getattr(ns, a) for a in self.argspec.args]
-        varargs = getattr(ns, self.argspec.varargs or '', [])
+        if hasattr(self, 'argspec') and self.argspec.varkw:
+            v = self.argspec.varargs
+            varkw = self.argspec.varkw
+            if v in ns.__dict__:
+                lst = ns.__dict__.pop(v)
+                lst, kwargs = _extract_kwargs(lst)
+                ns.__dict__[v] = lst
+            elif varkw in ns.__dict__:
+                lst = ns.__dict__.pop(varkw)
+                lst, kwargs = _extract_kwargs(lst)
+                ns.__dict__[varkw] = lst
+            if lst and not v:
+                self.error(_('Unrecognized arguments: %s') % arglist)
+        else:
+            kwargs = {}
         collision = set(self.argspec.args) & set(kwargs)
         if collision:
             self.error(
                 _('colliding keyword arguments: %s') % ' '.join(collision))
+        args = [getattr(ns, a) for a in self.argspec.args]
+        varargs = getattr(ns, self.argspec.varargs or '', [])
         return cmd, self.func(*(args + varargs + extraopts), **kwargs)
 
     def _extract_subparser_cmd(self, arglist):
-        "Extract the right subparser from the first recognized argument"
+        """
+        Extract the right subparser from the first recognized argument
+        """
         optprefix = self.prefix_chars[0]
         name_parser_map = self.subparsers._name_parser_map
         for i, arg in enumerate(arglist):
@@ -228,7 +289,9 @@ class ArgumentParser(argparse.ArgumentParser):
         return None, None
 
     def addsubcommands(self, commands, obj, title=None, cmdprefix=''):
-        "Extract a list of subcommands from obj and add them to the parser"
+        """
+        Extract a list of subcommands from obj and add them to the parser
+        """
         if hasattr(obj, cmdprefix) and obj.cmdprefix in self.prefix_chars:
             raise ValueError(_('The prefix %r is already taken!' % cmdprefix))
         if not hasattr(self, 'subparsers'):
@@ -239,13 +302,17 @@ class ArgumentParser(argparse.ArgumentParser):
         add_help = getattr(obj, 'add_help', True)
         for cmd in commands:
             func = getattr(obj, cmd[prefixlen:])  # strip the prefix
+            doc = (textwrap.dedent(func.__doc__.rstrip())
+                   if func.__doc__ else None)
             self.subparsers.add_parser(
-                cmd, add_help=add_help, help=func.__doc__, **pconf(func)
+                cmd, add_help=add_help, help=doc, **pconf(func)
                 ).populate_from(func)
 
     def _set_func_argspec(self, obj):
-        """Extracts the signature from a callable object and adds an .argspec
-        attribute to the parser. Also adds a .func reference to the object."""
+        """
+        Extracts the signature from a callable object and adds an .argspec
+        attribute to the parser. Also adds a .func reference to the object.
+        """
         self.func = obj
         self.argspec = getargspec(obj)
         _parser_registry[obj] = self
@@ -278,8 +345,10 @@ class ArgumentParser(argparse.ArgumentParser):
                         a.type = to_datetime
                     elif isinstance(default, date):
                         a.type = to_date
-                    else:
+                    elif default is not None:
                         a.type = type(default)
+                if not metavar and default == '':
+                    metavar = "''"
             if a.kind in ('option', 'flag'):
                 if a.abbrev:
                     shortlong = (prefix + a.abbrev,

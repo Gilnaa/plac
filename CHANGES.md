@@ -1,6 +1,22 @@
 HISTORY
 -------
 
+## [Unreleased]
+
+##  1.2.0 (2020-06-05)
+
+Added dedenting of usage docstrings, as requested by Istvan Albert.
+Added new decorators `plac.pos`, `plac.opt`, `plac.flg` and an example
+using them in a section "For the impatient".
+Added tests on travis for Python 3.8.
+
+##  1.1.3 (2018-10-27)
+
+Fixed some issues with kwargs parsing, docstring formatting and empty
+string defaults reported by the user https://github.com/isaacto. Changed
+the testing framework on travis from nosetest to pytest. Ported the
+documentation to sphinx.
+
 ## 1.1.0 (2018-07-28)
 
 Extended the recognition of default types to date and datetime in ISO
@@ -13,9 +29,9 @@ for all the other 3.X releases.
 
 ## 1.0.0 (2018-08-03)
 
-New feature, requested by John Didion: if the type of an
-argument is not specified but there is a default value, it is inferred from
-the it. This is experimental and works for Python literal types.
+New feature, requested by John Didion: if the type of an argument is not
+specified but there is a default value, it is inferred from it. This is
+experimental and works only for Python literal types.
 Fixed a bug caused by arguments with default None in newer versions of argparse.
 Added a `gh-pages` branch with the documentation, as suggested by Ryan Gonzalez.
 Extended the Travis testing to Python 3.6. Python 2.6 still works but it is

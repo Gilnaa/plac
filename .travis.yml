@@ -1,17 +1,16 @@
-sudo: false
-
 language: python
+dist: bionic
 
 python:
  - "2.7"
- - "3.4"
  - "3.5"
  - "3.6"
  - "3.7"
+ - "3.8"
 
 install:
   - pip install sqlsoup
   - python setup.py install
 
 script:
-  nosetests -vx doc
+  pytest -v doc

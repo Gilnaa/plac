@@ -37,7 +37,7 @@ def parser_from(f, **kw):
 
 
 def check_help(name):
-    sys.argv[0] = name + '.py'  # avoid issue with nosetests
+    sys.argv[0] = name + '.py'  # avoid issue with pytest
     plac_core._parser_registry.clear()  # makes different imports independent
     try:
         try:
@@ -62,7 +62,7 @@ def test_expected_help():
         if fname.endswith('.help'):
             name = fname[:-5]
             if name not in ('vcs', 'ishelve'):
-                yield check_help, fname[:-5]
+                check_help(fname[:-5])
 
 
 p1 = parser_from(lambda delete, *args: None,
@@ -185,6 +185,16 @@ def test_metavar_with_defaults():
     sys.argv[0] = sys_argv0
 
 
+def test_metavar_empty_string():
+    # see https://github.com/micheles/plac/issues/36
+    def main(arg=''):
+        pass
+    sys.argv[0] = 'test_plac.py'
+    p = parser_from(main)
+    assert_usage(p, "usage: test_plac.py [-h] ['']\n")
+    sys.argv[0] = sys_argv0
+
+
 def test_kwargs():
     def main(opt, arg1, *args, **kw):
         print(opt, arg1)
@@ -199,10 +209,45 @@ def test_kwargs():
     expect(SystemExit, plac.call, main, ['arg1', 'arg2', 'a=1', 'opt=2'])
 
 
+def test_kwargs2():
+    # see https://github.com/micheles/plac/issues/39
+    def main(**kw):
+        return kw.items()
+    assert plac.call(main, ['a=1']) == [('a', '1')]
+    expect(SystemExit, plac.call, main, ['foo'])
+    expect(SystemExit, plac.call, main, ['foo', 'a=1'])
+
+
+def test_kwargs3():
+    # see https://github.com/micheles/plac/issues/38
+    def main(opt='foo', **kw):
+        return opt, kw
+    main.__annotations__ = dict(opt=('Option', 'option'))
+    assert plac.call(main, ['-o', 'abc=']) == ['abc=', {}]
+    assert plac.call(main, ['-o', 'abc=', 'z=1']) == ['abc=', {'z': '1'}]
+    assert plac.call(main, ['z=1']) == ['foo', {'z': '1'}]
+
+
 def test_date_default():
     p = parser_from(lambda day=datetime.date.today(): day)
     arg = p.parse_args(['2019-11-19'])
     assert arg.day == datetime.date(2019, 11, 19)
+
+
+def test_int_default():
+    p = parser_from(lambda number=42: number)
+    arg = p.parse_args([])
+    assert arg.number == 42
+    arg = p.parse_args(['424242'])
+    assert arg.number == 424242
+
+
+def test_none_default():
+    p = parser_from(lambda nonable=None: arg)
+    arg = p.parse_args([])
+    assert arg.nonable is None
+    arg = p.parse_args(['somestring'])
+    assert arg.nonable == 'somestring'
 
 
 class Cmds(object):
@@ -245,7 +290,7 @@ def test_yield():
 
 
 def test_doctest():
-    failure, tot = doctest.testfile('plac.rst', module_relative=False)
+    failure, tot = doctest.testfile('index.rst', module_relative=False)
     assert not failure, failure
 
 
@@ -263,13 +308,13 @@ def check_script(args):
 def test_batch():
     for batch in os.listdir('.'):
         if batch.endswith('.plac'):
-            yield check_script, [PLAC_RUNNER, '-b', batch]
+            check_script([PLAC_RUNNER, '-b', batch])
 
 
 def test_placet():
     for placet in os.listdir('.'):
         if placet.endswith('.placet'):
-            yield check_script, [PLAC_RUNNER, '-t', placet]
+            check_script([PLAC_RUNNER, '-t', placet])
 
 
 if __name__ == '__main__':
